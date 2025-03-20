@@ -23,6 +23,8 @@ APP_COMPLETIONS_DIR = $(APP_EXTRAS_DIR)/completions
 DMG_NAME = Alacritty.dmg
 DMG_DIR = $(RELEASE_DIR)/osx
 
+ZIP_NAME = Alacritty.zip
+
 vpath $(TARGET) $(RELEASE_DIR)
 vpath $(APP_NAME) $(APP_DIR)
 vpath $(DMG_NAME) $(APP_DIR)
@@ -35,10 +37,10 @@ help: ## Print this help message
 binary: $(TARGET)-native ## Build a release binary
 binary-universal: $(TARGET)-universal ## Build a universal release binary
 $(TARGET)-native:
-	MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release
+	MACOSX_DEPLOYMENT_TARGET="10.12" cargo build --release
 $(TARGET)-universal:
-	MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=x86_64-apple-darwin
-	MACOSX_DEPLOYMENT_TARGET="10.11" cargo build --release --target=aarch64-apple-darwin
+	MACOSX_DEPLOYMENT_TARGET="10.12" cargo build --release --target=x86_64-apple-darwin
+	MACOSX_DEPLOYMENT_TARGET="10.12" cargo build --release --target=aarch64-apple-darwin
 	@lipo target/{x86_64,aarch64}-apple-darwin/release/$(TARGET) -create -output $(APP_BINARY)
 
 app: $(APP_NAME)-native ## Create an Alacritty.app
@@ -56,13 +58,29 @@ $(APP_NAME)-%: $(TARGET)-%
 	@cp -fp $(APP_BINARY) $(APP_BINARY_DIR)
 	@cp -fp $(COMPLETIONS) $(APP_COMPLETIONS_DIR)
 	@touch -r "$(APP_BINARY)" "$(APP_DIR)/$(APP_NAME)"
-	@codesign --remove-signature "$(APP_DIR)/$(APP_NAME)"
-	@codesign --force --deep --sign - "$(APP_DIR)/$(APP_NAME)"
 	@echo "Created '$(APP_NAME)' in '$(APP_DIR)'"
 
-dmg: $(DMG_NAME)-native ## Create an Alacritty.dmg
-dmg-universal: $(DMG_NAME)-universal ## Create a universal Alacritty.dmg
-$(DMG_NAME)-%: $(APP_NAME)-%
+codesign: # app-universal
+	@codesign --remove-signature "$(APP_DIR)/$(APP_NAME)"
+	# @codesign --force --deep --sign - "$(APP_DIR)/$(APP_NAME)"
+	# @codesign --force --deep --sign "$(DEVELOPER_ID)" --options=runtime --verbose --entitlements assets/entitlements.xml "$(APP_DIR)/$(APP_NAME)"
+	@codesign --force --deep --sign "$(DEVELOPER_ID)" --options=runtime --verbose "$(APP_DIR)/$(APP_NAME)"
+
+notarize-bundle: # check-env codesign
+	rm -f $(ZIP_NAME)
+	ditto -c -k --keepParent --sequesterRsrc "$(APP_DIR)/$(APP_NAME)" $(ZIP_NAME)
+	xcrun notarytool submit $(ZIP_NAME) --wait \
+	  --apple-id "$(APPLE_ID_EMAIL)" \
+	  --team-id "$(APPLE_DEVELOPER_TEAM_ID)" \
+	  --password "$(NOTARIZATION_PASSWORD)"
+
+staple-bundle: # check-env notarize-bundle
+	xcrun stapler staple "$(APP_DIR)/$(APP_NAME)"
+
+#dmg: $(DMG_NAME)-native ## Create an Alacritty.dmg
+#dmg-universal: $(DMG_NAME)-universal ## Create a universal Alacritty.dmg
+#$(DMG_NAME)-%: $(APP_NAME)-%
+build-dmg: # codesign staple-bundle
 	@echo "Packing disk image..."
 	@ln -sf /Applications $(DMG_DIR)/Applications
 	@hdiutil create $(DMG_DIR)/$(DMG_NAME) \
@@ -71,6 +89,15 @@ $(DMG_NAME)-%: $(APP_NAME)-%
 		-srcfolder $(APP_DIR) \
 		-ov -format UDZO
 	@echo "Packed '$(APP_NAME)' in '$(APP_DIR)'"
+
+notarize-dmg: # check-env build-dmg
+	xcrun notarytool submit $(DMG_DIR)/$(DMG_NAME) --wait \
+	  --apple-id "$(APPLE_ID_EMAIL)" \
+	  --team-id "$(APPLE_DEVELOPER_TEAM_ID)" \
+	  --password "$(NOTARIZATION_PASSWORD)"
+
+staple-dmg: # check-env notarize-dmg
+	xcrun stapler staple $(DMG_DIR)/$(DMG_NAME)
 
 install: $(INSTALL)-native ## Mount disk image
 install-universal: $(INSTALL)-native ## Mount universal disk image
