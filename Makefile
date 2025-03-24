@@ -62,9 +62,7 @@ $(APP_NAME)-%: $(TARGET)-%
 
 codesign: # app-universal
 	@codesign --remove-signature "$(APP_DIR)/$(APP_NAME)"
-	# @codesign --force --deep --sign - "$(APP_DIR)/$(APP_NAME)"
-	# @codesign --force --deep --sign "$(DEVELOPER_ID)" --options=runtime --verbose --entitlements assets/entitlements.xml "$(APP_DIR)/$(APP_NAME)"
-	@codesign --force --deep --sign "$(DEVELOPER_ID)" --options=runtime --verbose "$(APP_DIR)/$(APP_NAME)"
+	@codesign --force --deep --sign "$(DEVELOPER_ID)" --options=runtime --verbose --entitlements extra/osx/entitlements.xml "$(APP_DIR)/$(APP_NAME)"
 
 notarize-bundle: # check-env codesign
 	rm -f $(ZIP_NAME)
